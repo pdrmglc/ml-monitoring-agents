@@ -6,8 +6,8 @@
     "context": ".."
   },
 
-  "workspaceMount": "source=${localWorkspaceFolder},target=/code,type=bind",
-  "workspaceFolder": "/code",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind",
+  "workspaceFolder": "/app",
 
   "forwardPorts": [5678],
 
