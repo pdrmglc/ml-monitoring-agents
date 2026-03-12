@@ -1,0 +1,22 @@
+FROM python:3.11
+
+RUN apt-get update && apt-get install -y \
+    git \
+    nano \
+    curl \
+    tree \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar Google Cloud CLI
+RUN curl https://sdk.cloud.google.com | bash
+
+ENV PATH="/root/google-cloud-sdk/bin:${PATH}"
+
+WORKDIR /workspace
+
+COPY requirements.prod.txt .
+COPY requirements.dev.txt .
+
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.dev.txt

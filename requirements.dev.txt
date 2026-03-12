@@ -1,0 +1,15 @@
+-r requirements.prod.txt
+
+ipykernel
+jupyter
+
+pytest
+pytest-asyncio
+
+black
+ruff
+isort
+
+mypy
+
+httpx

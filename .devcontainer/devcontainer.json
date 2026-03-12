@@ -1,0 +1,37 @@
+{
+  "name": "ML Monitoring Agents Dev Container",
+
+  "build": {
+    "dockerfile": "./Dockerfile.dev",
+    "context": ".."
+  },
+
+  "workspaceMount": "source=${localWorkspaceFolder},target=/code,type=bind",
+  "workspaceFolder": "/code",
+
+  "forwardPorts": [5678],
+
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh,target=/root/.ssh,type=bind",
+    "source=${localEnv:APPDATA}/gcloud,target=/root/.config/gcloud,type=bind"
+  ],
+  "runArgs": [
+    "--env-file",
+    ".env"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "ms-python.debugpy",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-docker",
+        "github.vscode-github-actions",
+        "ms-python.isort",
+        "charliermarsh.ruff"
+      ]
+    }
+  }
+}

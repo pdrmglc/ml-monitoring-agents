@@ -1,0 +1,17 @@
+langgraph
+langchain
+langchain-openai
+openai
+
+pandas
+numpy
+scikit-learn
+
+pydantic
+python-dotenv
+
+fastapi
+uvicorn
+
+google-cloud-logging
+google-cloud-bigquery
