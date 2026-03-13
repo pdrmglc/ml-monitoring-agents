@@ -10,7 +10,9 @@ COPY requirements.prod.txt .
 
 RUN pip install --no-cache-dir -r requirements.prod.txt
 
-COPY . .
+COPY app/ ./app/
+
+COPY artefacts/ ./artefacts/
 
 EXPOSE 8080
 
