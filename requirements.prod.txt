@@ -15,5 +15,6 @@ python-dotenv
 fastapi
 uvicorn
 
-google-cloud-logging
-google-cloud-bigquery
+mlflow==2.11.3
+google-cloud-storage
+google-auth
