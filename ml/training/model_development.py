@@ -1,9 +1,5 @@
 # %% Imports
-import os
-import shutil
-import subprocess
-import time
-from dotenv import load_dotenv
+from ml.training.mlflow_tracking import setup_mlflow, sync_mlflow_db
 
 from datetime import datetime
 import json
@@ -20,8 +16,6 @@ from ml.preprocessing.preprocessor import Preprocessor
 
 from pathlib import Path
 
-load_dotenv()
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_FOLDER_PATH = PROJECT_ROOT / "data"
 DATA_PATH = DATA_FOLDER_PATH / "WA_Fn-UseC_-Telco-Customer-Churn.csv"
@@ -29,29 +23,9 @@ OUTPUT_PATH = DATA_FOLDER_PATH / "output"
 
 OUTPUT_PATH.mkdir(exist_ok=True)
 
-MLFLOW_DB_PATH = "./mlflow_server/mlflow.db"
-SNAPSHOT_PATH = "./mlflow_server/mlflow_snapshot.db"
-GCS_PATH = os.getenv("MLFLOW_DB_PATH")
-
 # %% MLflow setup
-mlflow.set_tracking_uri("http://localhost:5000")
-mlflow.set_experiment("churn_model")
+setup_mlflow("churn_model")
 run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-# %% Function to sync MLflow DB to GCS
-def sync_mlflow_db():
-
-    print("Sincronizando MLflow DB...")
-    # pequena espera pra garantir flush do SQLite
-    time.sleep(2)
-
-    shutil.copy(MLFLOW_DB_PATH, SNAPSHOT_PATH)
-
-    subprocess.run(
-        ["gcloud", "storage", "cp", SNAPSHOT_PATH, GCS_PATH],
-        check=False
-    )
-
 
 # %% Load data
 def main():
@@ -81,8 +55,8 @@ def main():
         preprocessor = Preprocessor(categorical_features)
 
         model = LGBMClassifier(
-            n_estimators=500,
-            learning_rate=0.05,
+            n_estimators=5,
+            learning_rate=0.01,
             random_state=42,
         )
 

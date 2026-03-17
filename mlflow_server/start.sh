@@ -11,9 +11,9 @@ pkill -f "mlflow server" || true
 
 echo "Verificando mlflow.db no GCS..."
 
-if gsutil -q stat $MLFLOW_DB_PATH; then
+if gcloud storage ls $MLFLOW_DB_GCS_PATH > /dev/null 2>&1; then
   echo "Baixando banco existente..."
-  gsutil cp $MLFLOW_DB_PATH $DB_PATH
+  gcloud storage cp $MLFLOW_DB_GCS_PATH $DB_PATH
 else
   echo "Banco ainda não existe, criando novo..."
   touch $DB_PATH
@@ -23,6 +23,6 @@ echo "Iniciando MLflow..."
 
 mlflow server \
   --backend-store-uri sqlite:///$DB_PATH \
-  --default-artifact-root $MLFLOW_ARTIFACT_ROOT \
+  --default-artifact-root $MLFLOW_GCS_ARTIFACT_ROOT \
   --host 0.0.0.0 \
   --port 5000

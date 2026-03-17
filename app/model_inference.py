@@ -1,43 +1,18 @@
-import pickle
 import pandas as pd
-from pathlib import Path
+import mlflow.sklearn
+import mlflow
 
-# ----------------------------------------------------------------------------------------
+mlflow.set_tracking_uri("http://localhost:5000")
 
-# Resolve path dos artefatos
-current_dir = Path(__file__).parent
+MODEL_URI = "models:/churn_model@production"
 
-if (current_dir.parent / "artifacts").exists():
-    artefacts_path = current_dir.parent / "artifacts"
-else:
-    artefacts_path = Path("/app/artifacts")
-
-# ----------------------------------------------------------------------------------------
-
-# Load preprocessor and model
-with open(artefacts_path / "preprocessor.pkl", "rb") as f:
-    preprocessor = pickle.load(f)
-
-with open(artefacts_path / "model.pkl", "rb") as f:
-    model = pickle.load(f)
-
-# ----------------------------------------------------------------------------------------
-
-def process_test(df: pd.DataFrame) -> pd.DataFrame:
-
-    X = df.copy()
-
-    X_processed = preprocessor.transform(X)
-
-    return X_processed
+model = mlflow.sklearn.load_model(MODEL_URI)
 
 
-def process_predict(df) -> list:
+def process_predict(data):
 
-    input_df = pd.DataFrame(df)
+    df = pd.DataFrame(data)
 
-    processed_df = process_test(input_df)
-
-    prediction = model.predict_proba(processed_df)[:, 1].tolist()
+    prediction = model.predict_proba(df)[:, 1].tolist()
 
     return prediction
