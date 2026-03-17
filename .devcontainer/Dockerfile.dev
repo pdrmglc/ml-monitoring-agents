@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y \
     tree \
     build-essential \
     gnupg \
+    iproute2 \
+    lsof \
     && rm -rf /var/lib/apt/lists/*
 
 

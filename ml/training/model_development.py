@@ -1,54 +1,169 @@
 # %% Imports
-import pickle
+import os
+import shutil
+import subprocess
+import time
+from dotenv import load_dotenv
+
+from datetime import datetime
+import json
 import pandas as pd
+import mlflow
+import mlflow.sklearn
+
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, roc_auc_score, log_loss
 from lightgbm import LGBMClassifier
+
 from ml.preprocessing.preprocessor import Preprocessor
 
+from pathlib import Path
+
+load_dotenv()
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_FOLDER_PATH = PROJECT_ROOT / "data"
+DATA_PATH = DATA_FOLDER_PATH / "WA_Fn-UseC_-Telco-Customer-Churn.csv"
+OUTPUT_PATH = DATA_FOLDER_PATH / "output"
+
+OUTPUT_PATH.mkdir(exist_ok=True)
+
+MLFLOW_DB_PATH = "./mlflow_server/mlflow.db"
+SNAPSHOT_PATH = "./mlflow_server/mlflow_snapshot.db"
+GCS_PATH = os.getenv("MLFLOW_DB_PATH")
+
+# %% MLflow setup
+mlflow.set_tracking_uri("http://localhost:5000")
+mlflow.set_experiment("churn_model")
+run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+# %% Function to sync MLflow DB to GCS
+def sync_mlflow_db():
+
+    print("Sincronizando MLflow DB...")
+    # pequena espera pra garantir flush do SQLite
+    time.sleep(2)
+
+    shutil.copy(MLFLOW_DB_PATH, SNAPSHOT_PATH)
+
+    subprocess.run(
+        ["gcloud", "storage", "cp", SNAPSHOT_PATH, GCS_PATH],
+        check=False
+    )
+
+
 # %% Load data
-df = pd.read_csv("../../data/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+def main():
+    df = pd.read_csv(DATA_PATH)
 
-target = "Churn"
-id_col = "customerID"
+    target = "Churn"
+    id_col = "customerID"
 
-df_train, df_test = train_test_split(
-    df, test_size=0.2, random_state=42
-)
+    df_train, df_test = train_test_split(
+        df, test_size=0.2, random_state=42
+    )
 
-X_train = df_train.drop(columns=[target, id_col])
-y_train = df_train[target].map({"Yes": 1, "No": 0})
+    X_train = df_train.drop(columns=[target, id_col])
+    y_train = df_train[target].map({"Yes": 1, "No": 0})
 
-# %% Identify categorical features
-categorical_features = X_train.select_dtypes(include=["object", "str"]).columns.tolist()
+    X_test = df_test.drop(columns=[target, id_col])
+    y_test = df_test[target].map({"Yes": 1, "No": 0})
 
-# ----------------------------------------------------------------------------------------
+    # %% Identify categorical features
+    categorical_features = X_train.select_dtypes(include=["object"]).columns.tolist()
 
-# %% Apply encoding
+    # ----------------------------------------------------------------------------------------
 
-preprocessor = Preprocessor(categorical_features)
+    with mlflow.start_run(run_name=run_name):
 
-X_train_processed = preprocessor.fit_transform(X_train, y_train)
+        # %% Build pipeline
+        preprocessor = Preprocessor(categorical_features)
 
-# ----------------------------------------------------------------------------------------
+        model = LGBMClassifier(
+            n_estimators=500,
+            learning_rate=0.05,
+            random_state=42,
+        )
 
-# %% Train model
-model = LGBMClassifier(
-    n_estimators=500,
-    learning_rate=0.05,
-    random_state=42,
-)
+        pipeline = Pipeline([
+            ("preprocessor", preprocessor),
+            ("model", model)
+        ])
 
-model.fit(X_train_processed, y_train)
-# ----------------------------------------------------------------------------------------
+        # %% Train
+        pipeline.fit(X_train, y_train)
 
-# %% Save encoders and model
+        # ------------------------------------------------------------------------------------
 
-with open("../../artifacts/preprocessor.pkl", "wb") as f:
-    pickle.dump(preprocessor, f)
+        # %% Evaluate
+        y_pred = pipeline.predict(X_test)
+        y_proba = pipeline.predict_proba(X_test)[:, 1]
 
-with open("../../artifacts/model.pkl", "wb") as f:
-    pickle.dump(model, f)
+        metrics = {
+            "test_accuracy": accuracy_score(y_test, y_pred),
+            "test_auc": roc_auc_score(y_test, y_proba),
+            "test_logloss": log_loss(y_test, y_proba),
+        }
 
-with open("../../data/df_test.csv", "w") as f:
-    df_test.to_csv(f, index=False)
-# %%
+        mlflow.log_metrics(metrics)
+
+        # ------------------------------------------------------------------------------------
+
+        # %% Log model parameters
+        mlflow.log_params(model.get_params())
+
+        # ------------------------------------------------------------------------------------
+
+        # %% Log feature distributions (baseline for drift)
+
+        distributions = {}
+
+        for col in X_train.columns:
+
+            if X_train[col].dtype == "object":
+
+                distributions[col] = (
+                    X_train[col]
+                    .value_counts(normalize=True)
+                    .to_dict()
+                )
+
+            else:
+
+                distributions[col] = {
+                    "mean": float(X_train[col].mean()),
+                    "std": float(X_train[col].std()),
+                    "min": float(X_train[col].min()),
+                    "max": float(X_train[col].max()),
+                }
+
+        with open(f"{OUTPUT_PATH}/feature_distributions.json", "w") as f:
+            json.dump(distributions, f, indent=2)
+
+        mlflow.log_artifact(f"{OUTPUT_PATH}/feature_distributions.json")
+
+        # ------------------------------------------------------------------------------------
+
+        # %% Log full pipeline
+        mlflow.sklearn.log_model(
+            sk_model=pipeline,
+            artifact_path="model"
+        )
+
+        # ------------------------------------------------------------------------------------
+
+        # %% Save test set for later evaluation / monitoring
+
+        df_test.to_csv(f"{OUTPUT_PATH}/df_test.csv", index=False)
+        mlflow.log_artifact(f"{OUTPUT_PATH}/df_test.csv")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"Erro durante o treinamento: {e}")
+    try:
+        sync_mlflow_db()
+    except Exception as e:
+        print(f"Erro durante a sincronização: {e}")
