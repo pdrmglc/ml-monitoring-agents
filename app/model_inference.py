@@ -1,10 +1,9 @@
 import pandas as pd
 import mlflow.sklearn
 import mlflow
+import os
 
-mlflow.set_tracking_uri("http://localhost:5000")
-
-MODEL_URI = "models:/churn_model@production"
+MODEL_URI = os.getenv("MODEL_URI")
 
 model = mlflow.sklearn.load_model(MODEL_URI)
 
