@@ -18,3 +18,5 @@ uvicorn
 mlflow==2.11.3
 google-cloud-storage
 google-auth
+
+evidently

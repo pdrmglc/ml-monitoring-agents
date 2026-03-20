@@ -13,6 +13,8 @@ from sklearn.metrics import accuracy_score, roc_auc_score, log_loss
 from lightgbm import LGBMClassifier
 
 from ml.preprocessing.preprocessor import Preprocessor
+from ml.schema.data_definition import ID_COLUMN, TARGET_COLUMN
+
 
 from pathlib import Path
 
@@ -31,8 +33,8 @@ run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 def main():
     df = pd.read_csv(DATA_PATH)
 
-    target = "Churn"
-    id_col = "customerID"
+    target = TARGET_COLUMN
+    id_col = ID_COLUMN
 
     df_train, df_test = train_test_split(
         df, test_size=0.2, random_state=42
@@ -44,19 +46,16 @@ def main():
     X_test = df_test.drop(columns=[target, id_col])
     y_test = df_test[target].map({"Yes": 1, "No": 0})
 
-    # %% Identify categorical features
-    categorical_features = X_train.select_dtypes(include=["object"]).columns.tolist()
-
     # ----------------------------------------------------------------------------------------
 
     with mlflow.start_run(run_name=run_name):
 
         # %% Build pipeline
-        preprocessor = Preprocessor(categorical_features)
+        preprocessor = Preprocessor()
 
         model = LGBMClassifier(
-            n_estimators=5,
-            learning_rate=0.01,
+            n_estimators=300,
+            learning_rate=0.03,
             random_state=42,
         )
 
