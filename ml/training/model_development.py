@@ -1,7 +1,7 @@
 # %% Imports
 from ml.training.mlflow_tracking import setup_mlflow, sync_mlflow_db
 
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import pandas as pd
 import mlflow
@@ -27,7 +27,7 @@ OUTPUT_PATH.mkdir(exist_ok=True)
 
 # %% MLflow setup
 setup_mlflow("churn_model")
-run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+run_name = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
 
 # %% Load data
 def main():
