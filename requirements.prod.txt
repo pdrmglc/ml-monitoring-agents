@@ -20,3 +20,4 @@ google-cloud-storage
 google-auth
 
 evidently
+psycopg2

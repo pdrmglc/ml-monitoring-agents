@@ -1,5 +1,5 @@
 # %% Imports
-from ml.training.mlflow_tracking import setup_mlflow, sync_mlflow_db
+from ml.training.mlflow_tracking import setup_mlflow
 
 from datetime import datetime, timezone
 import json
@@ -136,7 +136,3 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         print(f"Erro durante o treinamento: {e}")
-    try:
-        sync_mlflow_db()
-    except Exception as e:
-        print(f"Erro durante a sincronização: {e}")

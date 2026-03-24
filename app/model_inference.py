@@ -1,18 +1,58 @@
-import pandas as pd
-import mlflow.sklearn
-import mlflow
 import os
 from datetime import datetime, timezone
+
+import pandas as pd
+import mlflow
+import mlflow.sklearn
+from mlflow.tracking import MlflowClient
 from google.cloud import storage
+
+
+# ========================
+# Config
+# ========================
 
 ML_GCS_PREDICTIONS_ROOT = os.getenv("ML_GCS_PREDICTIONS_ROOT")
 BUCKET_NAME = ML_GCS_PREDICTIONS_ROOT.replace("gs://", "")
 
-MODEL_URI = os.getenv("MODEL_URI")
-RUN_ID = MODEL_URI.split("/")[-3]  # Extrai o RUN_ID do MODEL_URI
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+MODEL_NAME = os.getenv("MODEL_NAME")
+MODEL_ALIAS = "production"
 
-model = mlflow.sklearn.load_model(MODEL_URI)
 
+# ========================
+# MLflow setup
+# ========================
+
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+
+# ========================
+# Load model + metadata
+# ========================
+
+def load_model_and_metadata():
+    client = MlflowClient()
+
+    # usa alias (mais moderno que stage)
+    mv = client.get_model_version_by_alias(
+        MODEL_NAME,
+        MODEL_ALIAS
+    )
+
+    model = mlflow.sklearn.load_model(
+        f"models:/{MODEL_NAME}@{MODEL_ALIAS}"
+    )
+
+    return model, mv.run_id, mv.version
+
+
+model, RUN_ID, MODEL_VERSION = load_model_and_metadata()
+
+
+# ========================
+# Prediction
+# ========================
 
 def process_predict(data):
 
@@ -23,6 +63,10 @@ def process_predict(data):
     return prediction
 
 
+# ========================
+# Save to GCS
+# ========================
+
 def save_prediction(df: pd.DataFrame):
     client = storage.Client()
     bucket = client.bucket(BUCKET_NAME)
@@ -31,8 +75,14 @@ def save_prediction(df: pd.DataFrame):
     date_str = now.strftime("%Y-%m-%d")
     timestamp_str = now.strftime("%Y%m%d_%H%M%S")
 
-    filename = f"predictions_{timestamp_str}_{RUN_ID}.parquet"
-    path = f"{RUN_ID}/{date_str}/{filename}"
+    filename = f"predictions_{timestamp_str}.parquet"
+
+    path = (
+        f"{MODEL_NAME}/"
+        f"v{MODEL_VERSION}/"
+        f"{date_str}/"
+        f"{filename}"
+    )
 
     blob = bucket.blob(path)
 
