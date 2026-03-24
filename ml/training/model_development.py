@@ -2,7 +2,6 @@
 from ml.training.mlflow_tracking import setup_mlflow
 
 from datetime import datetime, timezone
-import json
 import pandas as pd
 import mlflow
 import mlflow.sklearn
@@ -13,38 +12,44 @@ from sklearn.metrics import accuracy_score, roc_auc_score, log_loss
 from lightgbm import LGBMClassifier
 
 from ml.preprocessing.preprocessor import Preprocessor
-from ml.schema.data_definition import ID_COLUMN, TARGET_COLUMN
+from ml.schema.data_definition import TARGET_COLUMN, FEATURE_COLUMNS
 
-
-from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_FOLDER_PATH = PROJECT_ROOT / "data"
-DATA_PATH = DATA_FOLDER_PATH / "WA_Fn-UseC_-Telco-Customer-Churn.csv"
-OUTPUT_PATH = DATA_FOLDER_PATH / "output"
-
-OUTPUT_PATH.mkdir(exist_ok=True)
+from sqlalchemy import create_engine
+import os
 
 # %% MLflow setup
 setup_mlflow("churn_model")
 run_name = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
 
+def load_data_from_db(table_name="raw_data"):
+    DB_URL = os.getenv("CONN_STRING")
+    
+    engine = create_engine(DB_URL)
+
+    query = f"""
+    SELECT *
+    FROM {table_name}
+    """
+
+    df = pd.read_sql(query, engine)
+    return df
+
 # %% Load data
 def main():
-    df = pd.read_csv(DATA_PATH)
+    df = load_data_from_db(table_name="raw_data")
 
     target = TARGET_COLUMN
-    id_col = ID_COLUMN
 
     df_train, df_test = train_test_split(
         df, test_size=0.2, random_state=42
     )
 
-    X_train = df_train.drop(columns=[target, id_col])
-    y_train = df_train[target].map({"Yes": 1, "No": 0})
+    X_train = df_train[FEATURE_COLUMNS]
+    y_train = df_train[target].astype(int)
 
-    X_test = df_test.drop(columns=[target, id_col])
-    y_test = df_test[target].map({"Yes": 1, "No": 0})
+
+    X_test = df_test[FEATURE_COLUMNS]
+    y_test = df_test[target].astype(int)
 
     # ----------------------------------------------------------------------------------------
 
@@ -88,36 +93,6 @@ def main():
 
         # ------------------------------------------------------------------------------------
 
-        # %% Log feature distributions (baseline for drift)
-
-        distributions = {}
-
-        for col in X_train.columns:
-
-            if X_train[col].dtype == "object":
-
-                distributions[col] = (
-                    X_train[col]
-                    .value_counts(normalize=True)
-                    .to_dict()
-                )
-
-            else:
-
-                distributions[col] = {
-                    "mean": float(X_train[col].mean()),
-                    "std": float(X_train[col].std()),
-                    "min": float(X_train[col].min()),
-                    "max": float(X_train[col].max()),
-                }
-
-        with open(f"{OUTPUT_PATH}/feature_distributions.json", "w") as f:
-            json.dump(distributions, f, indent=2)
-
-        mlflow.log_artifact(f"{OUTPUT_PATH}/feature_distributions.json")
-
-        # ------------------------------------------------------------------------------------
-
         # %% Log full pipeline
         mlflow.sklearn.log_model(
             sk_model=pipeline,
@@ -125,11 +100,6 @@ def main():
         )
 
         # ------------------------------------------------------------------------------------
-
-        # %% Save test set for later evaluation / monitoring
-
-        df_test.to_csv(f"{OUTPUT_PATH}/df_test.csv", index=False)
-        mlflow.log_artifact(f"{OUTPUT_PATH}/df_test.csv")
 
 if __name__ == "__main__":
     try:

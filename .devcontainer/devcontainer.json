@@ -30,7 +30,8 @@
         "ms-azuretools.vscode-docker",
         "github.vscode-github-actions",
         "ms-python.isort",
-        "charliermarsh.ruff"
+        "charliermarsh.ruff",
+        "mechatroner.rainbow-csv"
       ]
     }
   }
