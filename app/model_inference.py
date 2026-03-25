@@ -7,7 +7,8 @@ import mlflow
 import mlflow.sklearn
 from mlflow.tracking import MlflowClient
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, Table, MetaData
+from sqlalchemy.dialects.postgresql import insert
 from ml.schema.data_definition import NUMERICAL_COLUMNS, CATEGORICAL_COLUMNS, BIN_COLUMNS, ID_COLUMN, FEATURE_COLUMNS
 
 
@@ -75,7 +76,7 @@ def process_predict(data):
 
     prediction = model.predict_proba(df)[:, 1]
 
-    return prediction, MODEL_NAME, MODEL_VERSION
+    return prediction, MODEL_NAME, MODEL_VERSION, RUN_ID
 
 # ========================
 # Carrega snapshot do dataset de treino
@@ -89,6 +90,10 @@ def load_reference_dataset(run_id):
 
     path = os.path.join(local_dir, "data.parquet")
     return pd.read_parquet(path)
+
+def get_training_ids(run_id):
+    df_ref = load_reference_dataset(run_id)
+    return set(df_ref[ID_COLUMN].values)
 
 def load_data_from_db(
     table_name="raw_data",
@@ -208,13 +213,31 @@ def run_drift_html():
 def save_prediction(df: pd.DataFrame):
     if df.empty:
         return
-    
+
     engine = create_connected_engine()
 
-    df.to_sql(
+    metadata = MetaData()
+    predictions_log_table = Table(
         "predictions_log",
-        engine,
-        if_exists="append",
-        index=False,
-        method="multi"  # melhora performance
+        metadata,
+        autoload_with=engine
     )
+
+    df["updated_at"] = datetime.now(timezone.utc)
+    records = df.to_dict(orient="records")
+
+    with engine.begin() as conn:
+        stmt = insert(predictions_log_table).values(records)
+
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["id", "model", "model_version"],
+            set_={
+                "predict_proba": stmt.excluded.predict_proba,
+                "prediction": stmt.excluded.prediction,
+                "threshold": stmt.excluded.threshold,
+                "used_in_training": stmt.excluded.used_in_training,
+                "updated_at": stmt.excluded.updated_at,
+            }
+        )
+
+        conn.execute(stmt)

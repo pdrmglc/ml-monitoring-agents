@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import pandas as pd
 
-from .model_inference import process_predict, save_prediction
+from .model_inference import process_predict, save_prediction, get_training_ids
 from ml.schema.pydantic_schema import FeatureRow
 from ml.schema.data_definition import ID_COLUMN
 
@@ -26,7 +26,11 @@ def predict(data: InputData, save: bool = True):
     ids = df[ID_COLUMN].values
     df_model = df.drop(columns=[ID_COLUMN], errors="ignore")
 
-    predict_proba, MODEL_NAME, MODEL_VERSION = process_predict(df_model)
+    predict_proba, MODEL_NAME, MODEL_VERSION, RUN_ID = process_predict(df_model)
+
+    training_ids = get_training_ids(RUN_ID)
+
+    used_in_training = [1 if cid in training_ids else 0 for cid in ids]
 
     threshold = 0.5
     predictions = (predict_proba >= threshold).astype(int)
@@ -39,6 +43,7 @@ def predict(data: InputData, save: bool = True):
             "predict_proba": predict_proba,
             "prediction": predictions,
             "threshold": threshold,
+            "used_in_training": used_in_training, 
             "created_at": datetime.now(timezone.utc)
         })
 
