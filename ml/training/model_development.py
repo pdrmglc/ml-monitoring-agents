@@ -99,8 +99,12 @@ def main():
         
 
         with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_df = df.copy()
+            tmp_df['prediction'] = pipeline.predict(tmp_df[FEATURE_COLUMNS])
+            tmp_df['predict_proba'] = pipeline.predict_proba(tmp_df[FEATURE_COLUMNS])[:, 1]
+            tmp_df['threshold'] = 0.5
             path = os.path.join(tmp_dir, "data.parquet")
-            df.to_parquet(path)
+            tmp_df.to_parquet(path)
             mlflow.log_artifact(path, artifact_path="dataset_snapshot")
 
         # ------------------------------------------------------------------------------------
