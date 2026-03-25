@@ -16,32 +16,38 @@ from ml.schema.data_definition import TARGET_COLUMN, FEATURE_COLUMNS
 
 from sqlalchemy import create_engine
 import os
+import tempfile
 
 # %% MLflow setup
 setup_mlflow("churn_model")
 run_name = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
 
-def load_data_from_db(table_name="raw_data"):
+def load_data_from_db(table_name="raw_data", data_start=None, data_end=None):
     DB_URL = os.getenv("CONN_STRING")
-    
     engine = create_engine(DB_URL)
 
     query = f"""
     SELECT *
     FROM {table_name}
+    WHERE created_at BETWEEN '{data_start}' AND '{data_end}'
     """
 
-    df = pd.read_sql(query, engine)
-    return df
+    return pd.read_sql(query, engine)
 
 # %% Load data
 def main():
-    df = load_data_from_db(table_name="raw_data")
+    table_name = "raw_data"
+    data_start = datetime.fromisoformat("2026-03-24 20:18:59.244813")
+    data_end = datetime.fromisoformat("2026-03-24 20:19:03.898733")
+    test_size = 0.2
+    random_state = 42
+
+    df = load_data_from_db(table_name, data_start, data_end)
 
     target = TARGET_COLUMN
 
     df_train, df_test = train_test_split(
-        df, test_size=0.2, random_state=42
+        df, test_size=test_size, random_state=random_state
     )
 
     X_train = df_train[FEATURE_COLUMNS]
@@ -61,7 +67,7 @@ def main():
         model = LGBMClassifier(
             n_estimators=300,
             learning_rate=0.03,
-            random_state=42,
+            random_state=random_state,
         )
 
         pipeline = Pipeline([
@@ -90,6 +96,22 @@ def main():
 
         # %% Log model parameters
         mlflow.log_params(model.get_params())
+
+        # ------------------------------------------------------------------------------------
+        # Log dataset used for train
+        mlflow.log_params({
+        "table_name": table_name,
+        "data_start": data_start,
+        "data_end": data_end,
+        "test_size": test_size,
+        "random_state": random_state
+            })
+        
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = os.path.join(tmp_dir, "data.parquet")
+            df.to_parquet(path)
+            mlflow.log_artifact(path, artifact_path="dataset_snapshot")
 
         # ------------------------------------------------------------------------------------
 
