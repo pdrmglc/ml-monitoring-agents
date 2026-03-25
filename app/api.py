@@ -8,6 +8,8 @@ from .model_inference import process_predict, save_prediction
 from ml.schema.pydantic_schema import FeatureRow
 from ml.schema.data_definition import ID_COLUMN
 
+from app.model_inference import run_drift
+
 
 class InputData(BaseModel):
     features: List[FeatureRow]
@@ -44,3 +46,8 @@ def predict(data: InputData, save: bool = True):
     ]
 
     return {"predictions": result}
+
+@main.get("/drift")
+def drift():
+    result = run_drift()
+    return result

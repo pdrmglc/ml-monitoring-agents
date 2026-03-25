@@ -2,7 +2,6 @@
 from ml.training.mlflow_tracking import setup_mlflow
 
 from datetime import datetime, timezone
-import pandas as pd
 import mlflow
 import mlflow.sklearn
 
@@ -14,7 +13,9 @@ from lightgbm import LGBMClassifier
 from ml.preprocessing.preprocessor import Preprocessor
 from ml.schema.data_definition import TARGET_COLUMN, FEATURE_COLUMNS
 
-from sqlalchemy import create_engine
+from app.model_inference import load_data_from_db
+
+
 import os
 import tempfile
 
@@ -22,17 +23,6 @@ import tempfile
 setup_mlflow("churn_model")
 run_name = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
 
-def load_data_from_db(table_name="raw_data", data_start=None, data_end=None):
-    DB_URL = os.getenv("CONN_STRING")
-    engine = create_engine(DB_URL)
-
-    query = f"""
-    SELECT *
-    FROM {table_name}
-    WHERE created_at BETWEEN '{data_start}' AND '{data_end}'
-    """
-
-    return pd.read_sql(query, engine)
 
 # %% Load data
 def main():
