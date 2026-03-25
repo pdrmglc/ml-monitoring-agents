@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import pandas as pd
 
-from .model_inference import process_predict, save_prediction, get_training_ids
+from app.model_inference import process_predict, save_prediction, get_training_ids
 from ml.schema.pydantic_schema import FeatureRow
 from ml.schema.data_definition import ID_COLUMN
 
