@@ -9,13 +9,11 @@ from mlflow.tracking import MlflowClient
 
 from sqlalchemy import create_engine, text, Table, MetaData
 from sqlalchemy.dialects.postgresql import insert
-from ml.schema.data_definition import NUMERICAL_COLUMNS, CATEGORICAL_COLUMNS, BIN_COLUMNS, ID_COLUMN, FEATURE_COLUMNS
+from ml.schema.data_definition import NUMERICAL_COLUMNS, CATEGORICAL_COLUMNS, BIN_COLUMNS, ID_COLUMN, FEATURE_COLUMNS, TARGET_COLUMN
 
 
-from evidently import DataDefinition
-from evidently import Dataset
-from evidently import Report
-from evidently.presets import DataDriftPreset
+from evidently import DataDefinition, BinaryClassification, Dataset, Report
+from evidently.presets import DataDriftPreset, ClassificationPreset
 from ml.schema.validate_schema import enforce_schema
 
 # ========================
@@ -123,32 +121,14 @@ def load_data_from_db(
 
 def get_evidently_schema():
     return DataDefinition(
-        numerical_columns=NUMERICAL_COLUMNS,
-        categorical_columns=CATEGORICAL_COLUMNS+BIN_COLUMNS,
-        id_column=ID_COLUMN,
+        classification=[BinaryClassification(
+            target=TARGET_COLUMN,
+            prediction_labels="prediction",
+            # prediction_probas="predict_proba"
+        )],
+        numerical_columns=NUMERICAL_COLUMNS, # + ["predict_proba"],
+        categorical_columns=CATEGORICAL_COLUMNS + BIN_COLUMNS + [TARGET_COLUMN,"prediction"]
     )
-
-def prepare_datasets(df_ref, df_cur, model):
-    if df_cur.empty:
-        return None, None
-
-    preprocessor = model.named_steps["preprocessor"]
-
-    # enforce schema
-    df_ref = enforce_schema(df_ref)
-    df_cur = enforce_schema(df_cur)
-
-    X_ref = pd.DataFrame(
-        preprocessor.transform(df_ref[FEATURE_COLUMNS]),
-        columns=FEATURE_COLUMNS
-    )
-
-    X_cur = pd.DataFrame(
-        preprocessor.transform(df_cur[FEATURE_COLUMNS]),
-        columns=FEATURE_COLUMNS
-    )
-
-    return X_ref, X_cur
 
 def build_drift_report(X_ref, X_cur):
     schema = get_evidently_schema()
@@ -156,45 +136,57 @@ def build_drift_report(X_ref, X_cur):
     dataset_ref = Dataset.from_pandas(X_ref, data_definition=schema)
     dataset_cur = Dataset.from_pandas(X_cur, data_definition=schema)
 
-    report = Report([DataDriftPreset()])
-    return report.run(dataset_ref, dataset_cur)
+    report = Report(
+    metrics=[
+        DataDriftPreset(),
+        ClassificationPreset()])
+
+    return report.run(dataset_cur, dataset_ref)
 
 def load_ref_and_current():
-    model, run_id, _ = load_model_and_metadata()
+    model, run_id, model_version = load_model_and_metadata()
 
-    df_ref = load_reference_dataset(run_id)
+    df = load_full_dataset(MODEL_NAME, model_version)
 
-    data_start = df_ref["created_at"].max()
-    data_end = datetime.now(timezone.utc)
-
-    df_cur = load_data_from_db(
-        table_name="raw_data",
-        data_start=data_start,
-        data_end=data_end,
-        inclusive_start=False
-    )
+    df_ref = df[df["used_in_training"] == 1].copy()
+    df_cur = df[df["used_in_training"] == 0].copy()
 
     return model, df_ref, df_cur
 
 def run_drift():
     model, df_ref, df_cur = load_ref_and_current()
 
-    if df_cur.empty:
-        return {"error": "No current data available"}
+    # remove linhas sem predição (join incompleto)
+    df_ref = df_ref.dropna(subset=["prediction", "predict_proba"])
+    df_cur = df_cur.dropna(subset=["prediction", "predict_proba"])
 
-    X_ref, X_cur = prepare_datasets(df_ref, df_cur, model)
+    # só onde tem churn para métricas de modelo
+    df_cur_valid = df_cur[df_cur[TARGET_COLUMN].notna()]
+
+    if df_cur_valid.empty:
+        return {"error": f"No current data with {TARGET_COLUMN} available"}
+
+    X_ref = build_full_evidently_dataset(df_ref, model)
+    X_cur = build_full_evidently_dataset(df_cur_valid, model)
 
     report = build_drift_report(X_ref, X_cur)
 
     return report.dict()
 
+
 def run_drift_html():
     model, df_ref, df_cur = load_ref_and_current()
 
-    if df_cur.empty:
-        return "<h1>No data</h1>"
+    df_ref = df_ref.dropna(subset=["prediction", "predict_proba"])
+    df_cur = df_cur.dropna(subset=["prediction", "predict_proba"])
 
-    X_ref, X_cur = prepare_datasets(df_ref, df_cur, model)
+    df_cur_valid = df_cur[df_cur[TARGET_COLUMN].notna()]
+
+    if df_cur_valid.empty:
+        return f"<h1>No data with {TARGET_COLUMN} available</h1>"
+
+    X_ref = build_full_evidently_dataset(df_ref, model)
+    X_cur = build_full_evidently_dataset(df_cur_valid, model)
 
     report = build_drift_report(X_ref, X_cur)
 
@@ -205,6 +197,46 @@ def run_drift_html():
             html = f.read()
 
     return html
+
+def build_full_evidently_dataset(df, model):
+    preprocessor = model.named_steps["preprocessor"]
+
+    extra_cols = df[[TARGET_COLUMN, "prediction", "predict_proba"]].copy()
+
+    df_features = enforce_schema(df)
+
+    X = pd.DataFrame(
+        preprocessor.transform(df_features[FEATURE_COLUMNS]),
+        columns=FEATURE_COLUMNS
+    )
+
+    # adiciona outputs
+    X[TARGET_COLUMN] = extra_cols[TARGET_COLUMN].values
+    X["prediction"] = extra_cols["prediction"].values
+    X["predict_proba"] = extra_cols["predict_proba"].values
+
+    return X
+
+def load_full_dataset(model_name, model_version):
+    engine = create_connected_engine()
+
+    query = f"""
+    SELECT 
+        r.*,
+        p.predict_proba,
+        p.prediction,
+        p.used_in_training
+    FROM raw_data r
+    JOIN predictions_log p
+        ON r.{ID_COLUMN} = p.id
+    WHERE p.model = '{model_name}'
+    AND p.model_version = '{model_version}'
+    """
+
+    return pd.read_sql(
+        query,
+        engine
+    )
 
 # ========================
 # Save to PostgreSQL
