@@ -11,7 +11,6 @@ RUN apt-get update && apt-get install -y \
     lsof \
     && rm -rf /var/lib/apt/lists/*
 
-
 # instalar Google Cloud CLI minimal
 RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
     | tee /etc/apt/sources.list.d/google-cloud-sdk.list \
@@ -22,6 +21,9 @@ RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.c
     && apt-get install -y google-cloud-cli \
     && rm -rf /var/lib/apt/lists/*
 
+RUN apt-get update \
+    && apt-get install -y google-cloud-cli-cloud-run-proxy \
+    && rm -rf /var/lib/apt/lists/*
 
 # criar workspace explicitamente
 RUN mkdir -p /app
